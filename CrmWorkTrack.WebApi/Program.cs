@@ -1,3 +1,4 @@
+using CrmWorkTrack.Application.Jobs.DTOs;
 using CrmWorkTrack.Infrastructure;
 using CrmWorkTrack.Infrastructure.Persistence;
 using CrmWorkTrack.WebApi.Auth;

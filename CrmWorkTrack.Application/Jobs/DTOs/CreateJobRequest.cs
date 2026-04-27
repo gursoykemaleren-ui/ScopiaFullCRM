@@ -6,5 +6,6 @@ public record CreateJobRequest(
     string? Description,
     string Status,
     string? Priority,
-    DateTime? DueDate
+    DateTime? DueDate,
+    int? AssignedToUserId   //  EKLEDİK
 );

@@ -1,4 +1,5 @@
-﻿using CrmWorkTrack.Domain.Entities;
+﻿using CrmWorkTrack.Infrastructure.Services;
+using CrmWorkTrack.Domain.Entities;
 using CrmWorkTrack.Infrastructure.Persistence;
 using CrmWorkTrack.WebApi.Auth.Authorization.Permissions;
 using CrmWorkTrack.WebApi.Common.Extensions;
@@ -14,13 +15,15 @@ namespace CrmWorkTrack.WebApi.Controllers;
 public class JobCommentsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly NotificationService _notificationService;
 
-    public JobCommentsController(AppDbContext db)
+    public JobCommentsController(
+        AppDbContext db,
+        NotificationService notificationService)
     {
         _db = db;
+        _notificationService = notificationService;
     }
-
-    public record AddJobCommentRequest(string Text);
 
     [HttpGet]
     [Authorize(Policy = "perm:jobs.comments.read")]
@@ -54,12 +57,19 @@ public class JobCommentsController : ControllerBase
         if (!int.TryParse(userIdStr, out var userId))
             return Unauthorized();
 
-        var jobExists = await _db.Set<Job>().AnyAsync(j => j.Id == jobId, ct);
-        if (!jobExists) return NotFound("Job not found.");
+        var job = await _db.Set<Job>()
+            .FirstOrDefaultAsync(j => j.Id == jobId, ct);
+
+        if (job == null)
+            return NotFound("Job not found.");
 
         var text = (req.Text ?? "").Trim();
-        if (text.Length == 0) return BadRequest("Text is required.");
-        if (text.Length > 2000) return BadRequest("Text is too long.");
+
+        if (text.Length == 0)
+            return BadRequest("Text is required.");
+
+        if (text.Length > 2000)
+            return BadRequest("Text is too long.");
 
         var now = DateTime.UtcNow;
 
@@ -75,7 +85,6 @@ public class JobCommentsController : ControllerBase
 
         _db.Set<JobComment>().Add(comment);
 
-        //
         _db.Set<JobActivity>().Add(new JobActivity
         {
             JobId = jobId,
@@ -87,6 +96,11 @@ public class JobCommentsController : ControllerBase
         });
 
         await _db.SaveChangesAsync(ct);
+
+        await _notificationService.CreateAsync(
+            "Yeni İş Yorumu Eklendi",
+            $"'{job.Title}' işine yeni bir yorum eklendi."
+        );
 
         return Ok(new { comment.Id });
     }
@@ -175,4 +189,8 @@ public class JobCommentsController : ControllerBase
 
         return NoContent();
     }
+}
+public class AddJobCommentRequest
+{
+    public string Text { get; set; } = string.Empty;
 }

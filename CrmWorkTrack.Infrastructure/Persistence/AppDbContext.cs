@@ -20,6 +20,11 @@ public class AppDbContext : DbContext
     public DbSet<JobActivity> JobActivities => Set<JobActivity>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<CustomerContact> CustomerContacts => Set<CustomerContact>();
+    public DbSet<Notification> Notifications { get; set; }
+
+    public DbSet<Ticket> Tickets { get; set; }
+    public DbSet<CustomerInteraction> CustomerInteractions { get; set; }
+    
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -345,5 +350,42 @@ public class AppDbContext : DbContext
 
             b.HasIndex(x => new { x.UserId, x.ExpiresAt });
         });
+
+        // TICKET
+        modelBuilder.Entity<Ticket>()
+    .HasOne(x => x.Customer)
+    .WithMany()
+    .HasForeignKey(x => x.CustomerId)
+    .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Ticket>()
+            .HasOne(x => x.AssignedToUser)
+            .WithMany()
+            .HasForeignKey(x => x.AssignedToUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Ticket>()
+            .HasOne(x => x.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.CreatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<CustomerInteraction>()
+            .HasOne(x => x.Customer)
+            .WithMany()
+            .HasForeignKey(x => x.CustomerId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CustomerInteraction>()
+            .HasOne(x => x.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.CreatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Notification>()
+            .HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

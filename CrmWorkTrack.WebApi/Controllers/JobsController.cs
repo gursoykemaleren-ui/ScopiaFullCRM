@@ -1,3 +1,4 @@
+using CrmWorkTrack.Infrastructure.Services;
 using CrmWorkTrack.WebApi.Common.Extensions;
 using CrmWorkTrack.Application.Common.Pagination;
 using CrmWorkTrack.Application.Interfaces;
@@ -23,15 +24,18 @@ public class JobsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IJobRepository _jobRepository;
     private readonly IJobActivityService _jobActivityService;
+    private readonly NotificationService _notificationService;
 
     public JobsController(
         AppDbContext db,
         IJobRepository jobRepository,
-        IJobActivityService jobActivityService)
+        IJobActivityService jobActivityService,
+        NotificationService notificationService)
     {
         _db = db;
         _jobRepository = jobRepository;
         _jobActivityService = jobActivityService;
+        _notificationService = notificationService;
     }
 
     private int? GetUserId()
@@ -43,7 +47,6 @@ public class JobsController : ControllerBase
         return int.TryParse(userIdStr, out var userId) ? userId : null;
     }
 
-    
 
     // GET: api/jobs?page=1&pageSize=10&isCompleted=true&customerId=1&assignedToUserId=2&q=test
     [HttpGet]
@@ -237,51 +240,45 @@ public class JobsController : ControllerBase
     }
 
     // POST: api/jobs
-    [Authorize(Policy = Permissions.Jobs.Create)]
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateJobRequest req, CancellationToken ct)
+    public async Task<IActionResult> Create([FromBody] CreateJobRequest request)
     {
         var userId = GetUserId();
-        if (userId is null) return Unauthorized();
 
-        var customerExists = await _db.Customers.AnyAsync(c => c.Id == req.CustomerId, ct);
-        if (!customerExists) return BadRequest("Customer not found.");
-
-        var parsedStatus = ParseStatus(req.Status);
-        if (!parsedStatus.HasValue)
-            return BadRequest("Invalid status. Use open, inprogress, completed or cancelled.");
-
-        var status = parsedStatus.Value;
-        var now = DateTime.UtcNow;
+        if (userId is null)
+            return Unauthorized();
 
         var job = new Job
         {
-            CustomerId = req.CustomerId,
-            Title = req.Title.Trim(),
-            Description = string.IsNullOrWhiteSpace(req.Description) ? null : req.Description.Trim(),
-            Status = status,
-            IsCompleted = status == JobStatus.Completed,
-            Priority = string.IsNullOrWhiteSpace(req.Priority) ? "Medium" : req.Priority.Trim(),
-            DueDate = req.DueDate,
-            IsActive = true,
+            CustomerId = request.CustomerId,
+            Title = request.Title,
+            Description = request.Description,
+            AssignedToUserId = request.AssignedToUserId,
             CreatedByUserId = userId.Value,
-            AssignedToUserId = null,
-            CreatedAt = now,
-            UpdatedAt = null
+            Priority = request.Priority ?? "Medium",
+            DueDate = request.DueDate,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true,
+            IsCompleted = false,
+            Status = JobStatus.Open
         };
 
         _db.Jobs.Add(job);
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesAsync();
 
-        await _jobActivityService.AddAsync(
-            job.Id,
-            JobActivityTypes.Created,
-            $"User({userId}) created job with status: {status}",
-            $"{{\"status\":\"{status}\"}}",
-            userId,
-            ct);
+        await _notificationService.CreateAsync(
+            job.AssignedToUserId != null ? "Yeni İş Atandı" : "Yeni İş Oluşturuldu",
+            job.AssignedToUserId != null
+                ? $"Size yeni bir iş atandı: {job.Title}"
+                : $"Yeni bir iş oluşturuldu: {job.Title}",
+            job.AssignedToUserId
+        );
 
-        return CreatedAtAction(nameof(GetById), new { id = job.Id }, new { jobId = job.Id });
+        return Ok(new
+        {
+            message = "İş başarıyla oluşturuldu.",
+            job.Id
+        });
     }
 
     // PUT: api/jobs/5

@@ -21,11 +21,13 @@ public static class DependencyInjection
             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
         services.AddScoped<IJobActivityService, JobActivityService>();
+        services.AddScoped<NotificationService>();
         services.AddScoped(typeof(IGenericRepository<>), typeof(EfRepository<>));
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<ICustomerRepository, CustomerRepository>();
         services.AddScoped<IJobRepository, JobRepository>();
         services.AddScoped<IPermissionService, PermissionService>();
+        
 
         return services;
     }
