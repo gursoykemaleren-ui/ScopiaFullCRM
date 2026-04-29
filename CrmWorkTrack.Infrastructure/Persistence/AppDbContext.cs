@@ -22,10 +22,10 @@ public class AppDbContext : DbContext
     public DbSet<CustomerContact> CustomerContacts => Set<CustomerContact>();
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<Attachment> Attachments { get; set; }
-
     public DbSet<Ticket> Tickets { get; set; }
     public DbSet<CustomerInteraction> CustomerInteractions { get; set; }
-    
+    public DbSet<ReturnRequest> ReturnRequests { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
