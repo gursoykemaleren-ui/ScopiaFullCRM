@@ -53,7 +53,7 @@ public class JobsController : ControllerBase
     [Authorize(Policy = Permissions.Jobs.Read)]
     public async Task<IActionResult> GetPaged(
     int page = 1,
-    int pageSize = 10,
+    int pageSize = 1000,
     bool? isCompleted = null,
     int? customerId = null,
     int? assignedToUserId = null,

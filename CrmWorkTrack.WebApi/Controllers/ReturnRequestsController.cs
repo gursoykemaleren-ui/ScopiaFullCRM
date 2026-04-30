@@ -64,17 +64,25 @@ public class ReturnRequestsController : ControllerBase
 
     // PUT: api/ReturnRequests/5
     [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateStatus(int id, [FromBody] string status)
+    public async Task<IActionResult> UpdateStatus(int id, [FromBody] ReturnRequestStatusUpdateDto dto)
     {
         var item = await _context.ReturnRequests.FindAsync(id);
 
-        if (item == null) return NotFound();
+        if (item == null)
+            return NotFound();
 
-        item.Status = status;
+        if (dto.Status != "Approved" && dto.Status != "Rejected" && dto.Status != "Pending")
+            return BadRequest("Geçersiz iade durumu.");
+
+        item.Status = dto.Status;
         item.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
 
         return Ok(item);
+    }
+    public class ReturnRequestStatusUpdateDto
+    {
+        public string Status { get; set; } = string.Empty;
     }
 }
