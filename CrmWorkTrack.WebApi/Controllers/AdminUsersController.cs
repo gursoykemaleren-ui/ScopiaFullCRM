@@ -1,9 +1,9 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using BCrypt.Net;
+using CrmWorkTrack.Domain.Entities;
+using CrmWorkTrack.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using CrmWorkTrack.Infrastructure.Persistence;
-using CrmWorkTrack.Domain.Entities;
-using BCrypt.Net;
 
 namespace CrmWorkTrack.WebApi.Controllers;
 
@@ -11,151 +11,216 @@ namespace CrmWorkTrack.WebApi.Controllers;
 [Route("api/admin/users")]
 public class AdminUsersController : ControllerBase
 {
-    private readonly AppDbContext _db;
+	private readonly AppDbContext _db;
 
-    public AdminUsersController(AppDbContext db)
-    {
-        _db = db;
-    }
+	public AdminUsersController(AppDbContext db)
+	{
+		_db = db;
+	}
 
-    // GET: api/admin/users
-    [HttpGet]
-    [Authorize(Policy = "users.read")]
-    public async Task<IActionResult> GetUsers()
-    {
-        var users = await _db.Users
-            .AsNoTracking()
-            .OrderBy(u => u.UserName)
-            .Select(u => new
-            {
-                UserId = u.Id,
-                u.UserName,
-                u.Email,
-                u.IsActive,
-                u.CreatedAt
-            })
-            .ToListAsync();
+	// GET: api/admin/users
+	[HttpGet]
+	[Authorize]
+	public async Task<IActionResult> GetUsers()
+	{
+		var users = await _db.Users
+			.AsNoTracking()
+			.OrderBy(u => u.Id)
+			.Select(u => new
+			{
+				id = u.Id,
+				userName = u.UserName,
+				email = u.Email,
+				isActive = u.IsActive,
+				createdAt = u.CreatedAt,
 
-        return Ok(users);
-    }
+				roles = _db.UserRoles
+					.Where(ur => ur.UserId == u.Id && ur.IsActive)
+					.Join(
+						_db.Roles,
+						ur => ur.RoleId,
+						r => r.Id,
+						(ur, r) => new
+						{
+							id = r.Id,
+							name = r.Name
+						}
+					)
+					.ToList()
+			})
+			.ToListAsync();
 
-    // POST: api/admin/users
-    [HttpPost]
-    [Authorize(Policy = "users.create")]
-    public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
-    {
-        request.UserName = request.UserName.Trim();
-        request.Email = request.Email.Trim();
+		return Ok(users);
+	}
 
-        if (string.IsNullOrWhiteSpace(request.UserName))
-            return BadRequest("UserName is required.");
+	// POST: api/admin/users
+	[HttpPost]
+	[Authorize]
+	public async Task<IActionResult> CreateUser([FromBody] CreateAdminUserRequest request)
+	{
+		if (request == null)
+			return BadRequest(new { message = "Request body is required." });
 
-        if (string.IsNullOrWhiteSpace(request.Password))
-            return BadRequest("Password is required.");
+		var userName = request.UserName?.Trim();
+		var email = request.Email?.Trim();
+		var password = request.Password?.Trim();
 
-        if (string.IsNullOrWhiteSpace(request.Email))
-            return BadRequest("Email is required.");
+		if (string.IsNullOrWhiteSpace(userName))
+			return BadRequest(new { message = "UserName is required." });
 
-        var exists = await _db.Users.AnyAsync(u => u.UserName == request.UserName || u.Email == request.Email);
-        if (exists)
-            return BadRequest("UserName or Email already exists.");
+		if (string.IsNullOrWhiteSpace(email))
+			return BadRequest(new { message = "Email is required." });
 
-        var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+		if (string.IsNullOrWhiteSpace(password))
+			return BadRequest(new { message = "Password is required." });
 
-        var user = new User
-        {
-            UserName = request.UserName,
-            Email = request.Email,
-            PasswordHash = passwordHash,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
+		if (password.Length < 6)
+			return BadRequest(new { message = "Password must be at least 6 characters." });
 
-        _db.Users.Add(user);
-        await _db.SaveChangesAsync();
+		var exists = await _db.Users.AnyAsync(u =>
+			u.UserName == userName || u.Email == email);
 
-        return Ok(new { UserId = user.Id, user.UserName });
-    }
+		if (exists)
+			return BadRequest(new { message = "UserName or Email already exists." });
 
-    // POST: api/admin/users/{id}/roles
-    [HttpPost("{id:int}/roles")]
-    [Authorize(Policy = "roles.manage")]
-    public async Task<IActionResult> SetUserRoles(int id, [FromBody] SetUserRolesRequest request)
-    {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
-        if (user is null) return NotFound("User not found.");
+		var user = new User
+		{
+			UserName = userName,
+			Email = email,
+			PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+			IsActive = true,
+			CreatedAt = DateTime.UtcNow
+		};
 
-        request.AddRoleIds ??= Array.Empty<int>();
-        request.RemoveRoleIds ??= Array.Empty<int>();
+		_db.Users.Add(user);
+		await _db.SaveChangesAsync();
 
-        var addIds = request.AddRoleIds.Distinct().ToList();
-        var removeIds = request.RemoveRoleIds.Distinct().ToList();
+		if (request.RoleId.HasValue)
+		{
+			var roleExists = await _db.Roles.AnyAsync(r => r.Id == request.RoleId.Value);
 
-        var allRoleIds = addIds.Concat(removeIds).Distinct().ToList();
-        if (allRoleIds.Count == 0)
-            return BadRequest("No role ids provided.");
+			if (!roleExists)
+				return BadRequest(new { message = "Selected role does not exist." });
 
-        var roles = await _db.Roles
-            .Where(r => allRoleIds.Contains(r.Id))
-            .ToListAsync();
+			_db.UserRoles.Add(new UserRole
+			{
+				UserId = user.Id,
+				RoleId = request.RoleId.Value,
+				IsActive = true,
+				CreatedAt = DateTime.UtcNow
+			});
 
-        var foundIds = roles.Select(r => r.Id).ToHashSet();
-        var missing = allRoleIds.Where(x => !foundIds.Contains(x)).ToList();
-        if (missing.Count > 0)
-            return BadRequest(new { message = "Unknown role ids.", missing });
+			await _db.SaveChangesAsync();
+		}
 
-        // preload existing userroles
-        var existing = await _db.UserRoles
-            .Where(ur => ur.UserId == id && allRoleIds.Contains(ur.RoleId))
-            .ToListAsync();
+		return Ok(new
+		{
+			message = "User created successfully.",
+			id = user.Id,
+			userName = user.UserName,
+			email = user.Email,
+			isActive = user.IsActive
+		});
+	}
 
-        // ADD (activate or insert)
-        foreach (var roleId in addIds)
-        {
-            var ur = existing.FirstOrDefault(x => x.RoleId == roleId);
-            if (ur is null)
-            {
-                _db.UserRoles.Add(new UserRole
-                {
-                    UserId = id,
-                    RoleId = roleId,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
-            else if (!ur.IsActive)
-            {
-                ur.IsActive = true;
-                ur.UpdatedAt = DateTime.UtcNow;
-            }
-        }
+	// PUT: api/admin/users/{id}/status
+	[HttpPut("{id:int}/status")]
+	[Authorize]
+	public async Task<IActionResult> UpdateUserStatus(int id, [FromBody] UpdateUserStatusRequest request)
+	{
+		if (request == null)
+			return BadRequest(new { message = "Request body is required." });
 
-        // REMOVE (soft disable)
-        foreach (var roleId in removeIds)
-        {
-            var ur = existing.FirstOrDefault(x => x.RoleId == roleId);
-            if (ur is not null && ur.IsActive)
-            {
-                ur.IsActive = false;
-                ur.UpdatedAt = DateTime.UtcNow;
-            }
-        }
+		var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
 
-        await _db.SaveChangesAsync();
-        return Ok(new { message = "User roles updated." });
-    }
+		if (user == null)
+			return NotFound(new { message = "User not found." });
+
+		user.IsActive = request.IsActive;
+		user.UpdatedAt = DateTime.UtcNow;
+
+		await _db.SaveChangesAsync();
+
+		return Ok(new
+		{
+			message = "User status updated successfully.",
+			id = user.Id,
+			isActive = user.IsActive
+		});
+	}
+
+	// POST: api/admin/users/{id}/role
+	[HttpPost("{id:int}/role")]
+	[Authorize]
+	public async Task<IActionResult> SetUserRole(int id, [FromBody] SetUserRoleRequest request)
+	{
+		if (request == null)
+			return BadRequest(new { message = "Request body is required." });
+
+		var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
+
+		if (user == null)
+			return NotFound(new { message = "User not found." });
+
+		var role = await _db.Roles.FirstOrDefaultAsync(r => r.Id == request.RoleId);
+
+		if (role == null)
+			return BadRequest(new { message = "Role not found." });
+
+		var currentUserRoles = await _db.UserRoles
+			.Where(ur => ur.UserId == id)
+			.ToListAsync();
+
+		foreach (var userRole in currentUserRoles)
+		{
+			userRole.IsActive = false;
+			userRole.UpdatedAt = DateTime.UtcNow;
+		}
+
+		var existingRole = currentUserRoles.FirstOrDefault(ur => ur.RoleId == request.RoleId);
+
+		if (existingRole == null)
+		{
+			_db.UserRoles.Add(new UserRole
+			{
+				UserId = id,
+				RoleId = request.RoleId,
+				IsActive = true,
+				CreatedAt = DateTime.UtcNow
+			});
+		}
+		else
+		{
+			existingRole.IsActive = true;
+			existingRole.UpdatedAt = DateTime.UtcNow;
+		}
+
+		await _db.SaveChangesAsync();
+
+		return Ok(new
+		{
+			message = "User role updated successfully.",
+			userId = user.Id,
+			roleId = role.Id,
+			roleName = role.Name
+		});
+	}
 }
 
-// DTOs
-public class CreateUserRequest
+public class CreateAdminUserRequest
 {
-    public string UserName { get; set; } = null!;
-    public string Email { get; set; } = null!;
-    public string Password { get; set; } = null!;
+	public string? UserName { get; set; }
+	public string? Email { get; set; }
+	public string? Password { get; set; }
+	public int? RoleId { get; set; }
 }
 
-public class SetUserRolesRequest
+public class UpdateUserStatusRequest
 {
-    public int[]? AddRoleIds { get; set; }
-    public int[]? RemoveRoleIds { get; set; }
+	public bool IsActive { get; set; }
+}
+
+public class SetUserRoleRequest
+{
+	public int RoleId { get; set; }
 }

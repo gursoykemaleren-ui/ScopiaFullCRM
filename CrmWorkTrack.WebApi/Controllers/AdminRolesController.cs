@@ -1,8 +1,8 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using CrmWorkTrack.Domain.Entities;
+using CrmWorkTrack.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using CrmWorkTrack.Infrastructure.Persistence;
-using CrmWorkTrack.Domain.Entities;
 
 namespace CrmWorkTrack.WebApi.Controllers;
 
@@ -19,18 +19,19 @@ public class AdminRolesController : ControllerBase
 
     // GET: api/admin/roles
     [HttpGet]
-    [Authorize(Policy = "roles.manage")]
+    [Authorize]
     public async Task<IActionResult> GetRoles()
     {
         var roles = await _db.Roles
             .AsNoTracking()
-            .OrderBy(r => r.Name)
+            .OrderBy(r => r.Id)
             .Select(r => new
             {
-                RoleId = r.Id,
-                r.Name,
-                r.Description,
-                r.IsActive
+                id = r.Id,
+                name = r.Name,
+                description = r.Description,
+                isActive = r.IsActive,
+                createdAt = r.CreatedAt
             })
             .ToListAsync();
 
@@ -39,21 +40,27 @@ public class AdminRolesController : ControllerBase
 
     // POST: api/admin/roles
     [HttpPost]
-    [Authorize(Policy = "roles.manage")]
-    public async Task<IActionResult> CreateRole([FromBody] CreateRoleRequest request)
+    [Authorize]
+    public async Task<IActionResult> CreateRole([FromBody] CreateAdminRoleRequest request)
     {
-        request.Name = request.Name.Trim();
+        if (request == null)
+            return BadRequest(new { message = "Request body is required." });
 
-        if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest("Role name is required.");
+        var name = request.Name?.Trim();
+        var description = request.Description?.Trim();
 
-        if (await _db.Roles.AnyAsync(r => r.Name == request.Name))
-            return BadRequest("Role already exists.");
+        if (string.IsNullOrWhiteSpace(name))
+            return BadRequest(new { message = "Role name is required." });
+
+        var exists = await _db.Roles.AnyAsync(r => r.Name == name);
+
+        if (exists)
+            return BadRequest(new { message = "Role already exists." });
 
         var role = new Role
         {
-            Name = request.Name,
-            Description = request.Description?.Trim(),
+            Name = name,
+            Description = description,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -61,129 +68,19 @@ public class AdminRolesController : ControllerBase
         _db.Roles.Add(role);
         await _db.SaveChangesAsync();
 
-        return Ok(new { RoleId = role.Id, role.Name });
-    }
-
-    // GET: api/admin/roles/{id}/permissions
-    [HttpGet("{id:int}/permissions")]
-    [Authorize(Policy = "roles.manage")]
-    public async Task<IActionResult> GetRolePermissions(int id)
-    {
-        var roleExists = await _db.Roles.AsNoTracking().AnyAsync(r => r.Id == id);
-        if (!roleExists) return NotFound("Role not found.");
-
-        var perms = await _db.RolePermissions
-            .AsNoTracking()
-            .Where(rp => rp.RoleId == id && rp.IsActive)
-            .Join(_db.Permissions.AsNoTracking(),
-                rp => rp.PermissionId,
-                p => p.Id,
-                (rp, p) => new
-                {
-                    PermissionId = p.Id,
-                    p.Code,
-                    p.Description
-                })
-            .OrderBy(x => x.Code)
-            .ToListAsync();
-
-        return Ok(perms);
-    }
-
-    // POST: api/admin/roles/{id}/permissions
-    [HttpPost("{id:int}/permissions")]
-    [Authorize(Policy = "roles.manage")]
-    public async Task<IActionResult> SetRolePermissions(int id, [FromBody] SetRolePermissionsRequest request)
-    {
-        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Id == id);
-        if (role is null) return NotFound("Role not found.");
-
-        request.AddPermissionCodes ??= Array.Empty<string>();
-        request.RemovePermissionCodes ??= Array.Empty<string>();
-
-        var addCodes = request.AddPermissionCodes
-            .Select(x => (x ?? "").Trim())
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct()
-            .ToList();
-
-        var removeCodes = request.RemovePermissionCodes
-            .Select(x => (x ?? "").Trim())
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct()
-            .ToList();
-
-        var allCodes = addCodes.Concat(removeCodes).Distinct().ToList();
-        if (allCodes.Count == 0)
-            return BadRequest("No permission codes provided.");
-
-        // Check codes exist
-        var permissions = await _db.Permissions
-            .Where(p => allCodes.Contains(p.Code))
-            .ToListAsync();
-
-        var foundCodes = permissions.Select(p => p.Code).ToHashSet();
-        var missing = allCodes.Where(c => !foundCodes.Contains(c)).ToList();
-        if (missing.Count > 0)
-            return BadRequest(new { message = "Unknown permission codes.", missing });
-
-        // Preload existing RolePermissions for that role (avoid N+1)
-        var permIds = permissions.Select(p => p.Id).ToList();
-
-        var existingRps = await _db.RolePermissions
-            .Where(rp => rp.RoleId == id && permIds.Contains(rp.PermissionId))
-            .ToListAsync();
-
-        // ADD (activate or insert)
-        foreach (var code in addCodes)
+        return Ok(new
         {
-            var perm = permissions.First(p => p.Code == code);
-
-            var existing = existingRps.FirstOrDefault(rp => rp.PermissionId == perm.Id);
-            if (existing is null)
-            {
-                _db.RolePermissions.Add(new RolePermission
-                {
-                    RoleId = id,
-                    PermissionId = perm.Id,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
-            else if (!existing.IsActive)
-            {
-                existing.IsActive = true;
-                existing.UpdatedAt = DateTime.UtcNow;
-            }
-        }
-
-        // REMOVE (soft disable)
-        foreach (var code in removeCodes)
-        {
-            var perm = permissions.First(p => p.Code == code);
-
-            var existing = existingRps.FirstOrDefault(rp => rp.PermissionId == perm.Id);
-            if (existing is not null && existing.IsActive)
-            {
-                existing.IsActive = false;
-                existing.UpdatedAt = DateTime.UtcNow;
-            }
-        }
-
-        await _db.SaveChangesAsync();
-        return Ok(new { message = "Role permissions updated." });
+            message = "Role created successfully.",
+            id = role.Id,
+            name = role.Name,
+            description = role.Description,
+            isActive = role.IsActive
+        });
     }
 }
 
-// ----- DTOs -----
-public class CreateRoleRequest
+public class CreateAdminRoleRequest
 {
-    public string Name { get; set; } = null!;
+    public string? Name { get; set; }
     public string? Description { get; set; }
-}
-
-public class SetRolePermissionsRequest
-{
-    public string[]? AddPermissionCodes { get; set; }
-    public string[]? RemovePermissionCodes { get; set; }
 }
