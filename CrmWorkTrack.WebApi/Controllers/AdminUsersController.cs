@@ -4,223 +4,267 @@ using CrmWorkTrack.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace CrmWorkTrack.WebApi.Controllers;
 
 [ApiController]
 [Route("api/admin/users")]
+[Authorize]
 public class AdminUsersController : ControllerBase
 {
-	private readonly AppDbContext _db;
+    private readonly AppDbContext _db;
 
-	public AdminUsersController(AppDbContext db)
-	{
-		_db = db;
-	}
+    public AdminUsersController(AppDbContext db)
+    {
+        _db = db;
+    }
 
-	// GET: api/admin/users
-	[HttpGet]
-	[Authorize]
-	public async Task<IActionResult> GetUsers()
-	{
-		var users = await _db.Users
-			.AsNoTracking()
-			.OrderBy(u => u.Id)
-			.Select(u => new
-			{
-				id = u.Id,
-				userName = u.UserName,
-				email = u.Email,
-				isActive = u.IsActive,
-				createdAt = u.CreatedAt,
+    private int? GetUserId()
+    {
+        var userIdStr =
+            User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
 
-				roles = _db.UserRoles
-					.Where(ur => ur.UserId == u.Id && ur.IsActive)
-					.Join(
-						_db.Roles,
-						ur => ur.RoleId,
-						r => r.Id,
-						(ur, r) => new
-						{
-							id = r.Id,
-							name = r.Name
-						}
-					)
-					.ToList()
-			})
-			.ToListAsync();
+        return int.TryParse(userIdStr, out var userId) ? userId : null;
+    }
 
-		return Ok(users);
-	}
+    private async Task<bool> IsCurrentUserAdminAsync(CancellationToken ct = default)
+    {
+        var userId = GetUserId();
 
-	// POST: api/admin/users
-	[HttpPost]
-	[Authorize]
-	public async Task<IActionResult> CreateUser([FromBody] CreateAdminUserRequest request)
-	{
-		if (request == null)
-			return BadRequest(new { message = "Request body is required." });
+        if (userId is null)
+            return false;
 
-		var userName = request.UserName?.Trim();
-		var email = request.Email?.Trim();
-		var password = request.Password?.Trim();
+        return await _db.UserRoles
+            .Where(ur => ur.UserId == userId.Value && ur.IsActive)
+            .Join(
+                _db.Roles,
+                ur => ur.RoleId,
+                r => r.Id,
+                (ur, r) => r.Name
+            )
+            .AnyAsync(role => role == "Admin", ct);
+    }
 
-		if (string.IsNullOrWhiteSpace(userName))
-			return BadRequest(new { message = "UserName is required." });
+    [HttpGet]
+    public async Task<IActionResult> GetUsers(CancellationToken ct)
+    {
+        if (!await IsCurrentUserAdminAsync(ct))
+            return Forbid();
 
-		if (string.IsNullOrWhiteSpace(email))
-			return BadRequest(new { message = "Email is required." });
+        var users = await _db.Users
+            .AsNoTracking()
+            .OrderBy(u => u.Id)
+            .Select(u => new
+            {
+                id = u.Id,
+                userName = u.UserName,
+                email = u.Email,
+                isActive = u.IsActive,
+                createdAt = u.CreatedAt,
 
-		if (string.IsNullOrWhiteSpace(password))
-			return BadRequest(new { message = "Password is required." });
+                roles = _db.UserRoles
+                    .Where(ur => ur.UserId == u.Id && ur.IsActive)
+                    .Join(
+                        _db.Roles,
+                        ur => ur.RoleId,
+                        r => r.Id,
+                        (ur, r) => new
+                        {
+                            id = r.Id,
+                            name = r.Name
+                        }
+                    )
+                    .ToList()
+            })
+            .ToListAsync(ct);
 
-		if (password.Length < 6)
-			return BadRequest(new { message = "Password must be at least 6 characters." });
+        return Ok(users);
+    }
 
-		var exists = await _db.Users.AnyAsync(u =>
-			u.UserName == userName || u.Email == email);
+    [HttpPost]
+    public async Task<IActionResult> CreateUser(
+        [FromBody] CreateAdminUserRequest request,
+        CancellationToken ct)
+    {
+        if (!await IsCurrentUserAdminAsync(ct))
+            return Forbid();
 
-		if (exists)
-			return BadRequest(new { message = "UserName or Email already exists." });
+        if (request == null)
+            return BadRequest(new { message = "Request body is required." });
 
-		var user = new User
-		{
-			UserName = userName,
-			Email = email,
-			PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
-			IsActive = true,
-			CreatedAt = DateTime.UtcNow
-		};
+        var userName = request.UserName?.Trim();
+        var email = request.Email?.Trim();
+        var password = request.Password?.Trim();
 
-		_db.Users.Add(user);
-		await _db.SaveChangesAsync();
+        if (string.IsNullOrWhiteSpace(userName))
+            return BadRequest(new { message = "UserName is required." });
 
-		if (request.RoleId.HasValue)
-		{
-			var roleExists = await _db.Roles.AnyAsync(r => r.Id == request.RoleId.Value);
+        if (string.IsNullOrWhiteSpace(email))
+            return BadRequest(new { message = "Email is required." });
 
-			if (!roleExists)
-				return BadRequest(new { message = "Selected role does not exist." });
+        if (string.IsNullOrWhiteSpace(password))
+            return BadRequest(new { message = "Password is required." });
 
-			_db.UserRoles.Add(new UserRole
-			{
-				UserId = user.Id,
-				RoleId = request.RoleId.Value,
-				IsActive = true,
-				CreatedAt = DateTime.UtcNow
-			});
+        if (password.Length < 6)
+            return BadRequest(new { message = "Password must be at least 6 characters." });
 
-			await _db.SaveChangesAsync();
-		}
+        var exists = await _db.Users.AnyAsync(
+            u => u.UserName == userName || u.Email == email,
+            ct);
 
-		return Ok(new
-		{
-			message = "User created successfully.",
-			id = user.Id,
-			userName = user.UserName,
-			email = user.Email,
-			isActive = user.IsActive
-		});
-	}
+        if (exists)
+            return BadRequest(new { message = "UserName or Email already exists." });
 
-	// PUT: api/admin/users/{id}/status
-	[HttpPut("{id:int}/status")]
-	[Authorize]
-	public async Task<IActionResult> UpdateUserStatus(int id, [FromBody] UpdateUserStatusRequest request)
-	{
-		if (request == null)
-			return BadRequest(new { message = "Request body is required." });
+        var user = new User
+        {
+            UserName = userName,
+            Email = email,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
 
-		var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync(ct);
 
-		if (user == null)
-			return NotFound(new { message = "User not found." });
+        if (request.RoleId.HasValue)
+        {
+            var roleExists = await _db.Roles.AnyAsync(
+                r => r.Id == request.RoleId.Value,
+                ct);
 
-		user.IsActive = request.IsActive;
-		user.UpdatedAt = DateTime.UtcNow;
+            if (!roleExists)
+                return BadRequest(new { message = "Selected role does not exist." });
 
-		await _db.SaveChangesAsync();
+            _db.UserRoles.Add(new UserRole
+            {
+                UserId = user.Id,
+                RoleId = request.RoleId.Value,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
 
-		return Ok(new
-		{
-			message = "User status updated successfully.",
-			id = user.Id,
-			isActive = user.IsActive
-		});
-	}
+            await _db.SaveChangesAsync(ct);
+        }
 
-	// POST: api/admin/users/{id}/role
-	[HttpPost("{id:int}/role")]
-	[Authorize]
-	public async Task<IActionResult> SetUserRole(int id, [FromBody] SetUserRoleRequest request)
-	{
-		if (request == null)
-			return BadRequest(new { message = "Request body is required." });
+        return Ok(new
+        {
+            message = "User created successfully.",
+            id = user.Id,
+            userName = user.UserName,
+            email = user.Email,
+            isActive = user.IsActive
+        });
+    }
 
-		var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
+    [HttpPut("{id:int}/status")]
+    public async Task<IActionResult> UpdateUserStatus(
+        int id,
+        [FromBody] UpdateUserStatusRequest request,
+        CancellationToken ct)
+    {
+        if (!await IsCurrentUserAdminAsync(ct))
+            return Forbid();
 
-		if (user == null)
-			return NotFound(new { message = "User not found." });
+        if (request == null)
+            return BadRequest(new { message = "Request body is required." });
 
-		var role = await _db.Roles.FirstOrDefaultAsync(r => r.Id == request.RoleId);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
 
-		if (role == null)
-			return BadRequest(new { message = "Role not found." });
+        if (user == null)
+            return NotFound(new { message = "User not found." });
 
-		var currentUserRoles = await _db.UserRoles
-			.Where(ur => ur.UserId == id)
-			.ToListAsync();
+        user.IsActive = request.IsActive;
+        user.UpdatedAt = DateTime.UtcNow;
 
-		foreach (var userRole in currentUserRoles)
-		{
-			userRole.IsActive = false;
-			userRole.UpdatedAt = DateTime.UtcNow;
-		}
+        await _db.SaveChangesAsync(ct);
 
-		var existingRole = currentUserRoles.FirstOrDefault(ur => ur.RoleId == request.RoleId);
+        return Ok(new
+        {
+            message = "User status updated successfully.",
+            id = user.Id,
+            isActive = user.IsActive
+        });
+    }
 
-		if (existingRole == null)
-		{
-			_db.UserRoles.Add(new UserRole
-			{
-				UserId = id,
-				RoleId = request.RoleId,
-				IsActive = true,
-				CreatedAt = DateTime.UtcNow
-			});
-		}
-		else
-		{
-			existingRole.IsActive = true;
-			existingRole.UpdatedAt = DateTime.UtcNow;
-		}
+    [HttpPost("{id:int}/role")]
+    public async Task<IActionResult> SetUserRole(
+        int id,
+        [FromBody] SetUserRoleRequest request,
+        CancellationToken ct)
+    {
+        if (!await IsCurrentUserAdminAsync(ct))
+            return Forbid();
 
-		await _db.SaveChangesAsync();
+        if (request == null)
+            return BadRequest(new { message = "Request body is required." });
 
-		return Ok(new
-		{
-			message = "User role updated successfully.",
-			userId = user.Id,
-			roleId = role.Id,
-			roleName = role.Name
-		});
-	}
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+
+        if (user == null)
+            return NotFound(new { message = "User not found." });
+
+        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Id == request.RoleId, ct);
+
+        if (role == null)
+            return BadRequest(new { message = "Role not found." });
+
+        var currentUserRoles = await _db.UserRoles
+            .Where(ur => ur.UserId == id)
+            .ToListAsync(ct);
+
+        foreach (var userRole in currentUserRoles)
+        {
+            userRole.IsActive = false;
+            userRole.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var existingRole = currentUserRoles.FirstOrDefault(ur => ur.RoleId == request.RoleId);
+
+        if (existingRole == null)
+        {
+            _db.UserRoles.Add(new UserRole
+            {
+                UserId = id,
+                RoleId = request.RoleId,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            existingRole.IsActive = true;
+            existingRole.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new
+        {
+            message = "User role updated successfully.",
+            userId = user.Id,
+            roleId = role.Id,
+            roleName = role.Name
+        });
+    }
 }
 
 public class CreateAdminUserRequest
 {
-	public string? UserName { get; set; }
-	public string? Email { get; set; }
-	public string? Password { get; set; }
-	public int? RoleId { get; set; }
+    public string? UserName { get; set; }
+    public string? Email { get; set; }
+    public string? Password { get; set; }
+    public int? RoleId { get; set; }
 }
 
 public class UpdateUserStatusRequest
 {
-	public bool IsActive { get; set; }
+    public bool IsActive { get; set; }
 }
 
 public class SetUserRoleRequest
 {
-	public int RoleId { get; set; }
+    public int RoleId { get; set; }
 }

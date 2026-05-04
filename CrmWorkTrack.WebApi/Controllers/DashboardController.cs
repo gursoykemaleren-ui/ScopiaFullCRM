@@ -182,6 +182,7 @@ public class DashboardController : ControllerBase
                 x.Priority,
                 x.CustomerId,
                 customerName = x.Customer.CompanyName,
+                x.DueDate,
                 x.CreatedAt
             })
             .ToListAsync(ct);

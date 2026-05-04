@@ -171,8 +171,17 @@ public class JobsController : ControllerBase
                 x.IsCompleted,
                 x.CustomerId,
                 customerName = x.Customer != null ? x.Customer.CompanyName : null,
+
                 x.CreatedByUserId,
+                createdByUserName = x.CreatedByUser != null
+                    ? x.CreatedByUser.UserName
+                    : null,
+
                 x.AssignedToUserId,
+                assignedToUserName = x.AssignedToUser != null
+                    ? x.AssignedToUser.UserName
+                    : null,
+
                 x.Priority,
                 x.DueDate,
                 CreatedAt = x.CreatedAt.AsUtc(),
@@ -425,16 +434,21 @@ public class JobsController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         await _jobActivityService.AddAsync(
-            job.Id,
-            JobActivityTypes.Assigned,
-            $"User({userId}) assigned job: {from?.ToString() ?? "null"} -> {req.AssignedToUserId}",
-            JsonSerializer.Serialize(new
-            {
-                from,
-                to = req.AssignedToUserId
-            }),
-            userId,
-            ct);
+      job.Id,
+    JobActivityTypes.Assigned,
+    $"User({userId}) assigned job: {from?.ToString() ?? "null"} -> {req.AssignedToUserId}",
+    JsonSerializer.Serialize(new
+    {
+        from,
+        to = req.AssignedToUserId
+    }),
+    userId,
+    ct);
+
+        await _notificationService.CreateJobAssignedAsync(
+            req.AssignedToUserId,
+            job.Title
+        );
 
         return NoContent();
     }

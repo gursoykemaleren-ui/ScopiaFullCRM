@@ -3,11 +3,13 @@ using CrmWorkTrack.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace CrmWorkTrack.WebApi.Controllers;
 
 [ApiController]
 [Route("api/admin/roles")]
+[Authorize]
 public class AdminRolesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -17,11 +19,39 @@ public class AdminRolesController : ControllerBase
         _db = db;
     }
 
-    // GET: api/admin/roles
-    [HttpGet]
-    [Authorize]
-    public async Task<IActionResult> GetRoles()
+    private int? GetUserId()
     {
+        var userIdStr =
+            User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        return int.TryParse(userIdStr, out var userId) ? userId : null;
+    }
+
+    private async Task<bool> IsCurrentUserAdminAsync(CancellationToken ct = default)
+    {
+        var userId = GetUserId();
+
+        if (userId is null)
+            return false;
+
+        return await _db.UserRoles
+            .Where(ur => ur.UserId == userId.Value && ur.IsActive)
+            .Join(
+                _db.Roles,
+                ur => ur.RoleId,
+                r => r.Id,
+                (ur, r) => r.Name
+            )
+            .AnyAsync(role => role == "Admin", ct);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetRoles(CancellationToken ct)
+    {
+        if (!await IsCurrentUserAdminAsync(ct))
+            return Forbid();
+
         var roles = await _db.Roles
             .AsNoTracking()
             .OrderBy(r => r.Id)
@@ -33,16 +63,19 @@ public class AdminRolesController : ControllerBase
                 isActive = r.IsActive,
                 createdAt = r.CreatedAt
             })
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(roles);
     }
 
-    // POST: api/admin/roles
     [HttpPost]
-    [Authorize]
-    public async Task<IActionResult> CreateRole([FromBody] CreateAdminRoleRequest request)
+    public async Task<IActionResult> CreateRole(
+        [FromBody] CreateAdminRoleRequest request,
+        CancellationToken ct)
     {
+        if (!await IsCurrentUserAdminAsync(ct))
+            return Forbid();
+
         if (request == null)
             return BadRequest(new { message = "Request body is required." });
 
@@ -52,7 +85,7 @@ public class AdminRolesController : ControllerBase
         if (string.IsNullOrWhiteSpace(name))
             return BadRequest(new { message = "Role name is required." });
 
-        var exists = await _db.Roles.AnyAsync(r => r.Name == name);
+        var exists = await _db.Roles.AnyAsync(r => r.Name == name, ct);
 
         if (exists)
             return BadRequest(new { message = "Role already exists." });
@@ -66,7 +99,7 @@ public class AdminRolesController : ControllerBase
         };
 
         _db.Roles.Add(role);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(ct);
 
         return Ok(new
         {

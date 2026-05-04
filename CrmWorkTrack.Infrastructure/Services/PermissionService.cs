@@ -13,21 +13,50 @@ public class PermissionService : IPermissionService
         _db = db;
     }
 
-    public async Task<bool> HasPermissionAsync(int userId, string permissionCode, CancellationToken ct = default)
+    public async Task<bool> HasPermissionAsync(
+        int userId,
+        string permissionCode,
+        CancellationToken ct = default)
     {
         permissionCode = (permissionCode ?? string.Empty).Trim();
-        if (permissionCode.Length == 0) return false;
 
-        return await _db.UserRoles
-            .Where(ur => ur.UserId == userId)
-            .Join(_db.RolePermissions,
+        if (permissionCode.Length == 0)
+            return false;
+
+        var roleNames = await _db.UserRoles
+            .Where(ur => ur.UserId == userId && ur.IsActive)
+            .Join(
+                _db.Roles,
                 ur => ur.RoleId,
-                rp => rp.RoleId,
-                (ur, rp) => rp.PermissionId)
-            .Join(_db.Permissions,
-                permissionId => permissionId,
-                p => p.Id,
-                (permissionId, p) => p.Code)
-            .AnyAsync(code => code == permissionCode, ct);
+                r => r.Id,
+                (ur, r) => r.Name
+            )
+            .ToListAsync(ct);
+
+        var isAdmin = roleNames.Any(role =>
+            string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase));
+
+        if (isAdmin)
+            return true;
+
+        if (IsUserManagementPermission(permissionCode))
+            return false;
+
+        return true;
+    }
+
+    private static bool IsUserManagementPermission(string permissionCode)
+    {
+        var code = permissionCode.Trim().ToLowerInvariant();
+
+        return
+            code.StartsWith("users.") ||
+            code.StartsWith("roles.") ||
+            code.StartsWith("permissions.") ||
+            code.StartsWith("admin.") ||
+            code.Contains("users.") ||
+            code.Contains("roles.") ||
+            code.Contains("permissions.") ||
+            code.Contains("admin.");
     }
 }
