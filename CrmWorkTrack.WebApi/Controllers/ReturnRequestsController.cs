@@ -81,6 +81,21 @@ public class ReturnRequestsController : ControllerBase
 
         return Ok(item);
     }
+    // DELETE: api/ReturnRequests/5
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var item = await _context.ReturnRequests.FindAsync(id);
+
+        if (item == null)
+            return NotFound("İade talebi bulunamadı.");
+
+        _context.ReturnRequests.Remove(item);
+        await _context.SaveChangesAsync();
+
+        return Ok("İade talebi silindi.");
+    }
+
     public class ReturnRequestStatusUpdateDto
     {
         public string Status { get; set; } = string.Empty;

@@ -69,16 +69,48 @@ public class AttachmentsController : ControllerBase
             return BadRequest("Dosya boyutu en fazla 5 MB olabilir.");
 
         var allowedTypes = new[]
-        {
+{
     "application/pdf",
+
     "image/jpeg",
     "image/png",
     "image/webp",
+
+    "text/plain",
+    "text/csv",
+    "application/csv",
+    "application/vnd.ms-excel",
+
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 };
+        var allowedExtensions = new[]
+{
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".txt",
+    ".csv",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx"
+};
+
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+
+        if (!allowedTypes.Contains(file.ContentType) || !allowedExtensions.Contains(extension))
+            return BadRequest("Bu dosya türüne izin verilmiyor.");
+
 
         if (!allowedTypes.Contains(file.ContentType))
             return BadRequest("Bu dosya türüne izin verilmiyor.");
@@ -90,7 +122,6 @@ public class AttachmentsController : ControllerBase
         var uploadsRoot = Path.Combine(_env.ContentRootPath, "uploads", "jobs", jobId.ToString());
         Directory.CreateDirectory(uploadsRoot);
 
-        var extension = Path.GetExtension(file.FileName);
         var storedFileName = $"{Guid.NewGuid()}{extension}";
         var filePath = Path.Combine(uploadsRoot, storedFileName);
 
