@@ -19,13 +19,16 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var users = await _context.Users
+            .AsNoTracking()
             .Where(x => x.IsActive)
             .OrderBy(x => x.UserName)
             .Select(x => new
             {
                 x.Id,
                 x.UserName,
-                x.Email
+                x.Email,
+                x.DepartmentId,
+                DepartmentName = x.Department != null ? x.Department.Name : null
             })
             .ToListAsync();
 

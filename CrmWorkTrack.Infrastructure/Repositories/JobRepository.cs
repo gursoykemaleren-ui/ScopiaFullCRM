@@ -23,18 +23,20 @@ public class JobRepository : EfRepository<Job>, IJobRepository
     }
 
     public async Task<(List<Job> Items, int TotalCount)> GetPagedAsync(
-        int page,
-        int pageSize,
-        bool? isCompleted = null,
-        int? customerId = null,
-        int? assignedToUserId = null,
-        int? createdByUserId = null,
-        string? priority = null,
-        string? status = null,
-        DateTime? dueDateFrom = null,
-        DateTime? dueDateTo = null,
-        string? q = null,
-        CancellationToken ct = default)
+    int page,
+    int pageSize,
+    bool? isCompleted = null,
+    int? customerId = null,
+    int? assignedToUserId = null,
+    int? createdByUserId = null,
+    int? createdDepartmentId = null,
+    int? assignedDepartmentId = null,
+    string? priority = null,
+    string? status = null,
+    DateTime? dueDateFrom = null,
+    DateTime? dueDateTo = null,
+    string? q = null,
+    CancellationToken ct = default)
     {
         if (page <= 0) page = 1;
         if (pageSize <= 0) pageSize = 10;
@@ -55,9 +57,24 @@ public class JobRepository : EfRepository<Job>, IJobRepository
         if (createdByUserId.HasValue)
             query = query.Where(x => x.CreatedByUserId == createdByUserId.Value);
 
+        if (createdDepartmentId.HasValue)
+        {
+            query = query.Where(x =>
+                x.CreatedByUser != null &&
+                x.CreatedByUser.DepartmentId == createdDepartmentId.Value);
+        }
+
+        if (assignedDepartmentId.HasValue)
+        {
+            query = query.Where(x =>
+                x.AssignedToUser != null &&
+                x.AssignedToUser.DepartmentId == assignedDepartmentId.Value);
+        }
+
         if (!string.IsNullOrWhiteSpace(priority))
         {
             priority = priority.Trim().ToLower();
+
             query = query.Where(x =>
                 x.Priority != null &&
                 x.Priority.ToLower() == priority);
@@ -76,14 +93,23 @@ public class JobRepository : EfRepository<Job>, IJobRepository
         }
 
         if (dueDateFrom.HasValue)
-            query = query.Where(x => x.DueDate.HasValue && x.DueDate.Value >= dueDateFrom.Value);
+        {
+            query = query.Where(x =>
+                x.DueDate.HasValue &&
+                x.DueDate.Value >= dueDateFrom.Value);
+        }
 
         if (dueDateTo.HasValue)
-            query = query.Where(x => x.DueDate.HasValue && x.DueDate.Value <= dueDateTo.Value);
+        {
+            query = query.Where(x =>
+                x.DueDate.HasValue &&
+                x.DueDate.Value <= dueDateTo.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(q))
         {
             q = q.Trim();
+
             query = query.Where(x =>
                 x.Title.Contains(q) ||
                 (x.Description != null && x.Description.Contains(q)));
@@ -94,7 +120,9 @@ public class JobRepository : EfRepository<Job>, IJobRepository
         var items = await query
             .Include(x => x.Customer)
             .Include(x => x.CreatedByUser)
+                .ThenInclude(u => u.Department)
             .Include(x => x.AssignedToUser)
+                .ThenInclude(u => u.Department)
             .AsNoTracking()
             .OrderByDescending(x => x.Id)
             .Skip((page - 1) * pageSize)

@@ -48,61 +48,80 @@ public class JobsController : ControllerBase
     }
 
 
-    // GET: api/jobs?page=1&pageSize=10&isCompleted=true&customerId=1&assignedToUserId=2&q=test
-    [HttpGet]
+    // GET: api/jobs?page=1&pageSize
     [Authorize(Policy = Permissions.Jobs.Read)]
+    [HttpGet]
     public async Task<IActionResult> GetPaged(
-    int page = 1,
-    int pageSize = 1000,
-    bool? isCompleted = null,
-    int? customerId = null,
-    int? assignedToUserId = null,
-    int? createdByUserId = null,
-    string? priority = null,
-    string? status = null,
-    DateTime? dueDateFrom = null,
-    DateTime? dueDateTo = null,
-    string? q = null,
-    CancellationToken ct = default)
+     int page = 1,
+     int pageSize = 1000,
+     bool? isCompleted = null,
+     int? customerId = null,
+     int? assignedToUserId = null,
+     int? createdByUserId = null,
+     int? createdDepartmentId = null,
+     int? assignedDepartmentId = null,
+     string? priority = null,
+     string? status = null,
+     DateTime? dueDateFrom = null,
+     DateTime? dueDateTo = null,
+     string? q = null,
+     CancellationToken ct = default)
     {
         var result = await _jobRepository.GetPagedAsync(
-            page,
-            pageSize,
-            isCompleted,
-            customerId,
-            assignedToUserId,
-            createdByUserId,
-            priority,
-            status,
-            dueDateFrom,
-            dueDateTo,
-            q,
-            ct);
+            page: page,
+            pageSize: pageSize,
+            isCompleted: isCompleted,
+            customerId: customerId,
+            assignedToUserId: assignedToUserId,
+            createdByUserId: createdByUserId,
+            createdDepartmentId: createdDepartmentId,
+            assignedDepartmentId: assignedDepartmentId,
+            priority: priority,
+            status: status,
+            dueDateFrom: dueDateFrom,
+            dueDateTo: dueDateTo,
+            q: q,
+            ct: ct);
 
         var items = result.Items.Select(x => new
         {
             x.Id,
             x.Title,
             x.Description,
-            x.Status,
+            status = x.Status.ToString(),
             x.IsCompleted,
+
             x.CustomerId,
             customerName = x.Customer != null ? x.Customer.CompanyName : null,
+
             x.CreatedByUserId,
+            createdByUserName = x.CreatedByUser != null ? x.CreatedByUser.UserName : null,
+            createdByDepartmentId = x.CreatedByUser != null ? x.CreatedByUser.DepartmentId : null,
+            createdByDepartmentName = x.CreatedByUser != null && x.CreatedByUser.Department != null
+                ? x.CreatedByUser.Department.Name
+                : null,
+
             x.AssignedToUserId,
+            assignedToUserName = x.AssignedToUser != null ? x.AssignedToUser.UserName : null,
+            assignedDepartmentId = x.AssignedToUser != null ? x.AssignedToUser.DepartmentId : null,
+            assignedDepartmentName = x.AssignedToUser != null && x.AssignedToUser.Department != null
+                ? x.AssignedToUser.Department.Name
+                : null,
+
             x.Priority,
             x.DueDate,
-            updatedAt= x.UpdatedAt.AsUtc(),
             createdAt = x.CreatedAt.AsUtc(),
+            updatedAt = x.UpdatedAt.AsUtc()
         });
 
-        return Ok(new
-        {
+        var pagedResult = new PagedResult<object>(
             page,
             pageSize,
-            totalCount = result.TotalCount,
-            items
-        });
+            result.TotalCount,
+            items.ToList()
+        );
+
+        return Ok(pagedResult);
     }
 
     // GET: api/jobs/my?page=1&pageSize=10&isCompleted=false&q=test
@@ -111,19 +130,24 @@ public class JobsController : ControllerBase
     public async Task<IActionResult> GetMyJobs(
     [FromQuery] PagedRequest request,
     [FromQuery] bool? isCompleted = null,
+    [FromQuery] int? createdDepartmentId = null,
     [FromQuery] string? q = null,
     CancellationToken ct = default)
     {
         var userId = GetUserId();
-        if (userId is null) return Unauthorized();
+
+        if (userId is null)
+            return Unauthorized();
 
         var (items, totalCount) = await _jobRepository.GetPagedAsync(
-            request.Page,
-            request.PageSize,
+            page: request.Page,
+            pageSize: request.PageSize,
             isCompleted: isCompleted,
             customerId: null,
             assignedToUserId: userId.Value,
             createdByUserId: null,
+            createdDepartmentId: createdDepartmentId,
+            assignedDepartmentId: null,
             q: q,
             ct: ct);
 
@@ -134,14 +158,28 @@ public class JobsController : ControllerBase
             x.Description,
             status = x.Status.ToString(),
             x.IsCompleted,
+
             x.CustomerId,
-            customerName = x.Customer?.CompanyName,
+            customerName = x.Customer != null ? x.Customer.CompanyName : null,
+
             x.CreatedByUserId,
+            createdByUserName = x.CreatedByUser != null ? x.CreatedByUser.UserName : null,
+            createdByDepartmentId = x.CreatedByUser != null ? x.CreatedByUser.DepartmentId : null,
+            createdByDepartmentName = x.CreatedByUser != null && x.CreatedByUser.Department != null
+                ? x.CreatedByUser.Department.Name
+                : null,
+
             x.AssignedToUserId,
+            assignedToUserName = x.AssignedToUser != null ? x.AssignedToUser.UserName : null,
+            assignedDepartmentId = x.AssignedToUser != null ? x.AssignedToUser.DepartmentId : null,
+            assignedDepartmentName = x.AssignedToUser != null && x.AssignedToUser.Department != null
+                ? x.AssignedToUser.Department.Name
+                : null,
+
             x.Priority,
             x.DueDate,
-            CreatedAt = x.CreatedAt.AsUtc(),
-            UpdatedAt = x.UpdatedAt.AsUtc()
+            createdAt = x.CreatedAt.AsUtc(),
+            updatedAt = x.UpdatedAt.AsUtc()
         });
 
         var result = new PagedResult<object>(
@@ -169,6 +207,7 @@ public class JobsController : ControllerBase
                 x.Description,
                 status = x.Status.ToString(),
                 x.IsCompleted,
+
                 x.CustomerId,
                 customerName = x.Customer != null ? x.Customer.CompanyName : null,
 
@@ -176,20 +215,33 @@ public class JobsController : ControllerBase
                 createdByUserName = x.CreatedByUser != null
                     ? x.CreatedByUser.UserName
                     : null,
+                createdByDepartmentId = x.CreatedByUser != null
+                    ? x.CreatedByUser.DepartmentId
+                    : null,
+                createdByDepartmentName = x.CreatedByUser != null && x.CreatedByUser.Department != null
+                    ? x.CreatedByUser.Department.Name
+                    : null,
 
                 x.AssignedToUserId,
                 assignedToUserName = x.AssignedToUser != null
                     ? x.AssignedToUser.UserName
                     : null,
+                assignedDepartmentId = x.AssignedToUser != null
+                    ? x.AssignedToUser.DepartmentId
+                    : null,
+                assignedDepartmentName = x.AssignedToUser != null && x.AssignedToUser.Department != null
+                    ? x.AssignedToUser.Department.Name
+                    : null,
 
                 x.Priority,
                 x.DueDate,
-                CreatedAt = x.CreatedAt.AsUtc(),
-                UpdatedAt = x.UpdatedAt.AsUtc()
+                createdAt = x.CreatedAt.AsUtc(),
+                updatedAt = x.UpdatedAt.AsUtc()
             })
             .FirstOrDefaultAsync(ct);
 
-        if (job is null) return NotFound("Job not found.");
+        if (job is null)
+            return NotFound("Job not found.");
 
         return Ok(job);
     }

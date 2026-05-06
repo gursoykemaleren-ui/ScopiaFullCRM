@@ -73,6 +73,7 @@ public class TicketsController : ControllerBase
             ticket.UpdatedAt
         });
     }
+
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary()
     {
@@ -110,14 +111,13 @@ public class TicketsController : ControllerBase
         });
     }
 
-
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTicketRequest request)
     {
-        var customerExists = await _context.Customers
-            .AnyAsync(x => x.Id == request.CustomerId);
+        var customer = await _context.Customers
+            .FirstOrDefaultAsync(x => x.Id == request.CustomerId);
 
-        if (!customerExists)
+        if (customer == null)
             return BadRequest("Geçerli bir müşteri seçilmelidir.");
 
         var ticket = new Ticket
@@ -129,16 +129,25 @@ public class TicketsController : ControllerBase
             Description = request.Description,
             Priority = request.Priority,
             Status = "Open",
-            CreatedAt = DateTime.Now
+            CreatedAt = DateTime.UtcNow
         };
 
         _context.Tickets.Add(ticket);
         await _context.SaveChangesAsync();
 
         await _notificationService.CreateAsync(
-            "Yeni Ticket Oluşturuldu",
-            $"Yeni ticket eklendi: {ticket.Title}"
+            "Yeni Destek Talebi",
+            $"{customer.CompanyName} müşterisi için yeni destek talebi oluşturuldu: {ticket.Title}"
         );
+
+        if (ticket.AssignedToUserId.HasValue)
+        {
+            await _notificationService.CreateAsync(
+                "Destek Talebi Size Atandı",
+                $"{customer.CompanyName} müşterisine ait destek talebi size atandı: {ticket.Title}",
+                ticket.AssignedToUserId.Value
+            );
+        }
 
         return Ok(new
         {
@@ -170,19 +179,33 @@ public class TicketsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateTicketRequest request)
     {
-        var ticket = await _context.Tickets.FindAsync(id);
+        var ticket = await _context.Tickets
+            .Include(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.Id == id);
 
         if (ticket == null)
             return NotFound("Ticket bulunamadı.");
+
+        var oldAssignedToUserId = ticket.AssignedToUserId;
 
         ticket.Title = request.Title;
         ticket.Description = request.Description;
         ticket.Priority = request.Priority;
         ticket.Status = request.Status;
         ticket.AssignedToUserId = request.AssignedToUserId;
-        ticket.UpdatedAt = DateTime.Now;
+        ticket.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
+
+        if (request.AssignedToUserId.HasValue &&
+            oldAssignedToUserId != request.AssignedToUserId)
+        {
+            await _notificationService.CreateAsync(
+                "Destek Talebi Size Atandı",
+                $"{ticket.Customer.CompanyName} müşterisine ait destek talebi size atandı: {ticket.Title}",
+                request.AssignedToUserId.Value
+            );
+        }
 
         return Ok("Ticket başarıyla güncellendi.");
     }
@@ -190,15 +213,26 @@ public class TicketsController : ControllerBase
     [HttpPatch("{id}/status")]
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateTicketStatusRequest request)
     {
-        var ticket = await _context.Tickets.FindAsync(id);
+        var ticket = await _context.Tickets
+            .Include(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.Id == id);
 
         if (ticket == null)
             return NotFound("Ticket bulunamadı.");
 
         ticket.Status = request.Status;
-        ticket.UpdatedAt = DateTime.Now;
+        ticket.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
+
+        if (ticket.AssignedToUserId.HasValue)
+        {
+            await _notificationService.CreateAsync(
+                "Destek Talebi Durumu Güncellendi",
+                $"{ticket.Customer.CompanyName} müşterisine ait destek talebinin durumu güncellendi: {ticket.Title}",
+                ticket.AssignedToUserId.Value
+            );
+        }
 
         return Ok("Ticket durumu güncellendi.");
     }
@@ -241,4 +275,3 @@ public class UpdateTicketStatusRequest
 {
     public string Status { get; set; } = "Open";
 }
-

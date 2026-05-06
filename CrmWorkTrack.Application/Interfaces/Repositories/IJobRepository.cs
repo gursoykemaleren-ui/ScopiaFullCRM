@@ -13,6 +13,8 @@ public interface IJobRepository : IGenericRepository<Job>
         int? customerId = null,
         int? assignedToUserId = null,
         int? createdByUserId = null,
+        int? createdDepartmentId = null,
+        int? assignedDepartmentId = null,
         string? priority = null,
         string? status = null,
         DateTime? dueDateFrom = null,
@@ -20,5 +22,4 @@ public interface IJobRepository : IGenericRepository<Job>
         string? q = null,
         CancellationToken ct = default);
 }
-
 

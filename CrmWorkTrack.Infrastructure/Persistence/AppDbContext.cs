@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     {
     }
     public DbSet<User> Users => Set<User>();
+    public DbSet<Department> Departments => Set<Department>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Permission> Permissions => Set<Permission>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
@@ -25,6 +26,7 @@ public class AppDbContext : DbContext
     public DbSet<Ticket> Tickets { get; set; }
     public DbSet<CustomerInteraction> CustomerInteractions { get; set; }
     public DbSet<ReturnRequest> ReturnRequests { get; set; }
+    
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -60,10 +62,49 @@ public class AppDbContext : DbContext
             b.HasIndex(x => x.UniqueKey)
                 .IsUnique()
                 .HasDatabaseName("UX_Users_UniqueKey");
+            //
+            b.Property(x => x.DepartmentId);
+
+            b.HasIndex(x => x.DepartmentId)
+                .HasDatabaseName("IX_Users_DepartmentId");
+
+            b.HasOne(x => x.Department)
+                .WithMany(x => x.Users)
+                .HasForeignKey(x => x.DepartmentId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             b.Property(x => x.IsActive).IsRequired();
             b.Property(x => x.CreatedAt).IsRequired();
             b.Property(x => x.UpdatedAt);
+        });
+        // DEPARTMENT
+        modelBuilder.Entity<Department>(b =>
+        {
+            b.ToTable("Departments");
+
+            b.HasKey(x => x.Id);
+
+            b.Property(x => x.Id)
+                .HasColumnName("DepartmentId");
+
+            b.Property(x => x.Name)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            b.Property(x => x.Description)
+                .HasMaxLength(500);
+
+            b.Property(x => x.IsActive)
+                .IsRequired();
+
+            b.Property(x => x.CreatedAt)
+                .IsRequired();
+
+            b.Property(x => x.UpdatedAt);
+
+            b.HasIndex(x => x.Name)
+                .IsUnique()
+                .HasDatabaseName("UX_Departments_Name");
         });
 
         // ROLE

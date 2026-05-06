@@ -61,6 +61,8 @@ public class AdminUsersController : ControllerBase
                 id = u.Id,
                 userName = u.UserName,
                 email = u.Email,
+                departmentId = u.DepartmentId,
+                departmentName = u.Department != null ? u.Department.Name : null,
                 isActive = u.IsActive,
                 createdAt = u.CreatedAt,
 
@@ -117,11 +119,21 @@ public class AdminUsersController : ControllerBase
         if (exists)
             return BadRequest(new { message = "UserName or Email already exists." });
 
+        if (request.DepartmentId.HasValue)
+        {
+            var departmentExists = await _db.Departments
+                .AnyAsync(d => d.Id == request.DepartmentId.Value && d.IsActive, ct);
+
+            if (!departmentExists)
+                return BadRequest(new { message = "Selected department does not exist." });
+        }
+
         var user = new User
         {
             UserName = userName,
             Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+            DepartmentId = request.DepartmentId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -155,6 +167,7 @@ public class AdminUsersController : ControllerBase
             id = user.Id,
             userName = user.UserName,
             email = user.Email,
+            departmentId = user.DepartmentId,
             isActive = user.IsActive
         });
     }
@@ -249,14 +262,58 @@ public class AdminUsersController : ControllerBase
             roleName = role.Name
         });
     }
+
+    [HttpPost("{id:int}/department")]
+    public async Task<IActionResult> SetUserDepartment(
+        int id,
+        [FromBody] SetUserDepartmentRequest request,
+        CancellationToken ct)
+    {
+        if (!await IsCurrentUserAdminAsync(ct))
+            return Forbid();
+
+        if (request == null)
+            return BadRequest(new { message = "Request body is required." });
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+
+        if (user == null)
+            return NotFound(new { message = "User not found." });
+
+        if (request.DepartmentId.HasValue)
+        {
+            var departmentExists = await _db.Departments
+                .AnyAsync(d => d.Id == request.DepartmentId.Value && d.IsActive, ct);
+
+            if (!departmentExists)
+                return BadRequest(new { message = "Selected department does not exist." });
+        }
+
+        user.DepartmentId = request.DepartmentId;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new
+        {
+            message = "User department updated successfully.",
+            userId = user.Id,
+            departmentId = user.DepartmentId
+        });
+    }
 }
 
 public class CreateAdminUserRequest
 {
     public string? UserName { get; set; }
+
     public string? Email { get; set; }
+
     public string? Password { get; set; }
+
     public int? RoleId { get; set; }
+
+    public int? DepartmentId { get; set; }
 }
 
 public class UpdateUserStatusRequest
@@ -267,4 +324,9 @@ public class UpdateUserStatusRequest
 public class SetUserRoleRequest
 {
     public int RoleId { get; set; }
+}
+
+public class SetUserDepartmentRequest
+{
+    public int? DepartmentId { get; set; }
 }

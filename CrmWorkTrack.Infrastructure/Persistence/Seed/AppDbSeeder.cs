@@ -8,6 +8,36 @@ public static class AppDbSeeder
     public static async Task SeedAsync(AppDbContext context)
     {
         await context.Database.MigrateAsync();
+        //department
+        var requiredDepartments = new[]
+{
+    "Proje",
+    "İK",
+    "Satış",
+    "Destek",
+    "Operasyon"
+};
+
+        var existingDepartmentNames = await context.Departments
+            .Select(x => x.Name)
+            .ToListAsync();
+
+        var missingDepartments = requiredDepartments
+            .Except(existingDepartmentNames, StringComparer.OrdinalIgnoreCase)
+            .Select(name => new Department
+            {
+                Name = name,
+                Description = $"{name} departmanı",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            })
+            .ToList();
+
+        if (missingDepartments.Count > 0)
+        {
+            context.Departments.AddRange(missingDepartments);
+            await context.SaveChangesAsync();
+        }
 
         var permissionCodes = new[]
         {
