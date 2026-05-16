@@ -9,6 +9,7 @@ public class AppDbContext : DbContext
         : base(options)
     {
     }
+
     public DbSet<User> Users => Set<User>();
     public DbSet<Department> Departments => Set<Department>();
     public DbSet<Role> Roles => Set<Role>();
@@ -21,17 +22,18 @@ public class AppDbContext : DbContext
     public DbSet<JobActivity> JobActivities => Set<JobActivity>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<CustomerContact> CustomerContacts => Set<CustomerContact>();
+
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<Attachment> Attachments { get; set; }
     public DbSet<Ticket> Tickets { get; set; }
     public DbSet<CustomerInteraction> CustomerInteractions { get; set; }
     public DbSet<ReturnRequest> ReturnRequests { get; set; }
-    
-
+    public DbSet<AccountingTransaction> AccountingTransactions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
         // USER
         modelBuilder.Entity<User>(b =>
         {
@@ -40,29 +42,20 @@ public class AppDbContext : DbContext
             b.HasKey(x => x.Id);
             b.Property(x => x.Id).HasColumnName("UserId");
 
-            b.Property(x => x.Email)
-                .HasMaxLength(256)
-                .IsRequired();
+            b.Property(x => x.Email).HasMaxLength(256).IsRequired();
 
             b.HasIndex(x => x.Email)
                 .IsUnique()
                 .HasDatabaseName("UX_Users_Email");
 
-            b.Property(x => x.UserName)
-                .HasMaxLength(100)
-                .IsRequired();
-
-            b.Property(x => x.PasswordHash)
-                .HasMaxLength(500)
-                .IsRequired();
-
-            b.Property(x => x.UniqueKey)
-                .HasMaxLength(100);
+            b.Property(x => x.UserName).HasMaxLength(100).IsRequired();
+            b.Property(x => x.PasswordHash).HasMaxLength(500).IsRequired();
+            b.Property(x => x.UniqueKey).HasMaxLength(100);
 
             b.HasIndex(x => x.UniqueKey)
                 .IsUnique()
                 .HasDatabaseName("UX_Users_UniqueKey");
-            //
+
             b.Property(x => x.DepartmentId);
 
             b.HasIndex(x => x.DepartmentId)
@@ -77,29 +70,19 @@ public class AppDbContext : DbContext
             b.Property(x => x.CreatedAt).IsRequired();
             b.Property(x => x.UpdatedAt);
         });
+
         // DEPARTMENT
         modelBuilder.Entity<Department>(b =>
         {
             b.ToTable("Departments");
 
             b.HasKey(x => x.Id);
+            b.Property(x => x.Id).HasColumnName("DepartmentId");
 
-            b.Property(x => x.Id)
-                .HasColumnName("DepartmentId");
-
-            b.Property(x => x.Name)
-                .HasMaxLength(150)
-                .IsRequired();
-
-            b.Property(x => x.Description)
-                .HasMaxLength(500);
-
-            b.Property(x => x.IsActive)
-                .IsRequired();
-
-            b.Property(x => x.CreatedAt)
-                .IsRequired();
-
+            b.Property(x => x.Name).HasMaxLength(150).IsRequired();
+            b.Property(x => x.Description).HasMaxLength(500);
+            b.Property(x => x.IsActive).IsRequired();
+            b.Property(x => x.CreatedAt).IsRequired();
             b.Property(x => x.UpdatedAt);
 
             b.HasIndex(x => x.Name)
@@ -115,13 +98,8 @@ public class AppDbContext : DbContext
             b.HasKey(x => x.Id);
             b.Property(x => x.Id).HasColumnName("RoleId");
 
-            b.Property(x => x.Name)
-                .HasMaxLength(100)
-                .IsRequired();
-
-            b.Property(x => x.Description)
-                .HasMaxLength(300);
-
+            b.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            b.Property(x => x.Description).HasMaxLength(300);
             b.Property(x => x.IsActive).IsRequired();
             b.Property(x => x.CreatedAt).IsRequired();
             b.Property(x => x.UpdatedAt);
@@ -145,15 +123,11 @@ public class AppDbContext : DbContext
             b.HasKey(x => x.Id);
             b.Property(x => x.Id).HasColumnName("PermissionId");
 
-            b.Property(x => x.Code)
-                .HasMaxLength(100)
-                .IsRequired();
+            b.Property(x => x.Code).HasMaxLength(100).IsRequired();
 
             b.HasIndex(x => x.Code).IsUnique();
 
-            b.Property(x => x.Description)
-                .HasMaxLength(500);
-
+            b.Property(x => x.Description).HasMaxLength(500);
             b.Property(x => x.CreatedAt).IsRequired();
             b.Property(x => x.UpdatedAt);
 
@@ -219,7 +193,6 @@ public class AppDbContext : DbContext
             b.Property(x => x.ContactName).HasMaxLength(150);
             b.Property(x => x.Email).HasMaxLength(256);
             b.Property(x => x.Phone).HasMaxLength(30);
-
             b.Property(x => x.Address).HasMaxLength(300);
             b.Property(x => x.City).HasMaxLength(100);
             b.Property(x => x.Notes).HasMaxLength(1000);
@@ -228,10 +201,7 @@ public class AppDbContext : DbContext
             b.Property(x => x.CreatedAt).IsRequired();
             b.Property(x => x.UpdatedAt);
 
-            // Audit
             b.Property(x => x.UpdatedByUserId);
-
-            // Soft Delete
             b.Property(x => x.IsDeleted).IsRequired();
             b.Property(x => x.DeletedAt);
             b.Property(x => x.DeletedByUserId);
@@ -257,10 +227,7 @@ public class AppDbContext : DbContext
             b.Property(x => x.CreatedAt).IsRequired();
             b.Property(x => x.UpdatedAt);
 
-            // Audit
             b.Property(x => x.UpdatedByUserId);
-
-            // Soft Delete
             b.Property(x => x.IsDeleted).IsRequired();
             b.Property(x => x.DeletedAt);
             b.Property(x => x.DeletedByUserId);
@@ -298,17 +265,12 @@ public class AppDbContext : DbContext
 
             b.Property(x => x.JobId).HasColumnName("JobId").IsRequired();
             b.Property(x => x.CreatedByUserId).HasColumnName("CreatedByUserId").IsRequired();
-
             b.Property(x => x.Text).HasColumnName("Text").HasMaxLength(4000).IsRequired();
             b.Property(x => x.IsActive).HasColumnName("IsActive").IsRequired();
-
             b.Property(x => x.CreatedAt).HasColumnName("CreatedAt").IsRequired();
             b.Property(x => x.UpdatedAt).HasColumnName("UpdatedAt");
 
-            // Audit
             b.Property(x => x.UpdatedByUserId).HasColumnName("UpdatedByUserId");
-
-            // Soft Delete
             b.Property(x => x.IsDeleted).HasColumnName("IsDeleted").IsRequired();
             b.Property(x => x.DeletedAt).HasColumnName("DeletedAt");
             b.Property(x => x.DeletedByUserId).HasColumnName("DeletedByUserId");
@@ -319,7 +281,7 @@ public class AppDbContext : DbContext
             b.HasQueryFilter(x => !x.IsDeleted);
         });
 
-        // JOB ACTIVITIES
+        // JOB ACTIVITY
         modelBuilder.Entity<JobActivity>(b =>
         {
             b.ToTable("JobActivities");
@@ -328,51 +290,37 @@ public class AppDbContext : DbContext
             b.Property(x => x.Id).HasColumnName("JobActivityId");
 
             b.Property(x => x.JobId).HasColumnName("JobId").IsRequired();
-
             b.Property(x => x.Type).HasColumnName("Type").HasMaxLength(100).IsRequired();
             b.Property(x => x.Message).HasColumnName("Message").HasMaxLength(1000);
             b.Property(x => x.MetaJson).HasColumnName("MetaJson").HasMaxLength(4000);
-
             b.Property(x => x.PerformedByUserId).HasColumnName("PerformedByUserId");
-
             b.Property(x => x.CreatedAt).HasColumnName("CreatedAt").IsRequired();
 
             b.HasIndex(x => x.JobId).HasDatabaseName("IX_JobActivities_JobId");
             b.HasIndex(x => x.PerformedByUserId).HasDatabaseName("IX_JobActivities_PerformedByUserId");
         });
-        modelBuilder.Entity<CustomerContact>(entity =>
+
+        // CUSTOMER CONTACT
+        modelBuilder.Entity<CustomerContact>(b =>
         {
-            entity.HasKey(x => x.Id);
+            b.HasKey(x => x.Id);
 
-            entity.Property(x => x.FullName)
-                .IsRequired()
-                .HasMaxLength(200);
+            b.Property(x => x.FullName).IsRequired().HasMaxLength(200);
+            b.Property(x => x.Title).HasMaxLength(100);
+            b.Property(x => x.Email).HasMaxLength(200);
+            b.Property(x => x.Phone).HasMaxLength(50);
+            b.Property(x => x.MobilePhone).HasMaxLength(50);
+            b.Property(x => x.Notes).HasMaxLength(2000);
+            b.Property(x => x.CreatedAt).IsRequired();
 
-            entity.Property(x => x.Title)
-                .HasMaxLength(100);
-
-            entity.Property(x => x.Email)
-                .HasMaxLength(200);
-
-            entity.Property(x => x.Phone)
-                .HasMaxLength(50);
-
-            entity.Property(x => x.MobilePhone)
-                .HasMaxLength(50);
-
-            entity.Property(x => x.Notes)
-                .HasMaxLength(2000);
-
-            entity.Property(x => x.CreatedAt)
-                .IsRequired();
-
-            entity.HasOne(x => x.Customer)
+            b.HasOne(x => x.Customer)
                 .WithMany(x => x.Contacts)
                 .HasForeignKey(x => x.CustomerId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
-    
-    modelBuilder.Entity<RefreshToken>(b =>
+
+        // REFRESH TOKEN
+        modelBuilder.Entity<RefreshToken>(b =>
         {
             b.ToTable("RefreshTokens");
 
@@ -381,7 +329,6 @@ public class AppDbContext : DbContext
 
             b.Property(x => x.TokenHash).HasMaxLength(256).IsRequired();
             b.Property(x => x.TokenSalt).HasMaxLength(256).IsRequired();
-
             b.Property(x => x.CreatedAt).IsRequired();
             b.Property(x => x.ExpiresAt).IsRequired();
 
@@ -395,10 +342,10 @@ public class AppDbContext : DbContext
 
         // TICKET
         modelBuilder.Entity<Ticket>()
-    .HasOne(x => x.Customer)
-    .WithMany()
-    .HasForeignKey(x => x.CustomerId)
-    .OnDelete(DeleteBehavior.Cascade);
+            .HasOne(x => x.Customer)
+            .WithMany()
+            .HasForeignKey(x => x.CustomerId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<Ticket>()
             .HasOne(x => x.AssignedToUser)
@@ -412,6 +359,7 @@ public class AppDbContext : DbContext
             .HasForeignKey(x => x.CreatedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // CUSTOMER INTERACTION
         modelBuilder.Entity<CustomerInteraction>()
             .HasOne(x => x.Customer)
             .WithMany()
@@ -424,10 +372,80 @@ public class AppDbContext : DbContext
             .HasForeignKey(x => x.CreatedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // NOTIFICATION
         modelBuilder.Entity<Notification>()
             .HasOne(x => x.User)
             .WithMany()
             .HasForeignKey(x => x.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // ACCOUNTING TRANSACTION
+        modelBuilder.Entity<AccountingTransaction>(b =>
+        {
+            b.ToTable("AccountingTransactions");
+
+            b.HasKey(x => x.Id);
+
+            b.Property(x => x.Id)
+                .HasColumnName("AccountingTransactionId");
+
+            b.Property(x => x.Type)
+                .HasMaxLength(20)
+                .IsRequired();
+
+            b.Property(x => x.Category)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            b.Property(x => x.Title)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            b.Property(x => x.Description)
+                .HasMaxLength(500);
+
+            b.Property(x => x.Amount)
+                .HasColumnType("decimal(18,2)")
+                .IsRequired();
+
+            b.Property(x => x.VatRate)
+                .HasColumnType("decimal(5,2)")
+                .IsRequired();
+
+            b.Property(x => x.DiscountRate)
+                .HasColumnType("decimal(5,2)")
+                .IsRequired();
+
+            b.Property(x => x.DiscountAmount)
+                .HasColumnType("decimal(18,2)")
+                .IsRequired();
+
+            b.Property(x => x.VatAmount)
+                .HasColumnType("decimal(18,2)")
+                .IsRequired();
+
+            b.Property(x => x.TotalAmount)
+                .HasColumnType("decimal(18,2)")
+                .IsRequired();
+
+            b.Property(x => x.TransactionDate)
+                .IsRequired();
+
+            b.Property(x => x.CreatedAt)
+                .IsRequired();
+
+            b.Property(x => x.UpdatedAt);
+
+            b.HasOne(x => x.Customer)
+                .WithMany()
+                .HasForeignKey(x => x.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasIndex(x => x.CustomerId)
+                .HasDatabaseName("IX_AccountingTransactions_CustomerId");
+
+            b.HasIndex(x => x.TransactionDate)
+                .HasDatabaseName("IX_AccountingTransactions_TransactionDate");
+        });
     }
 }
